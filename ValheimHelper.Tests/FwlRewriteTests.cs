@@ -1,5 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using System.IO;
 using Xunit.Abstractions;
 
 namespace ValheimHelper.Tests;
@@ -12,26 +11,18 @@ public class FwlRewriteTests
     public FwlRewriteTests(ITestOutputHelper output)
     {
         _output = output;
-        
-        var serviceProvider = new ServiceCollection()
-            .AddLogging()
-            .BuildServiceProvider();
 
-        var factory = serviceProvider.GetService<ILoggerFactory>();
-
-        var logger = factory.CreateLogger<FwlFileHelper>();
-            
-        _fwlFileHelper = new FwlFileHelper(logger);
+        _fwlFileHelper = new FwlFileHelper(XUnitLogger.CreateLogger<FwlFileHelper>(output));
     }
     
 
     [Fact]
     public void ReadWorldName()
     {
+        var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var sourcePath = $@"{userFolder}\Downloads\Vierhalla";
 
-        var sourcePath = @"C:\Users\ravel\Downloads\Vierhalla";
-
-        var fwlFileName = "Vierhalla20240521a.fwl - Not internally renamed";
+        var fwlFileName = "world.fwl";
 
         var fullPath = Path.Combine(sourcePath, fwlFileName);
 
@@ -44,15 +35,16 @@ public class FwlRewriteTests
     [Fact]
     public void NewFileWithNewWorldName()
     {
-        var sourcePath = @"C:\Users\ravel\Downloads\Vierhalla";
+        var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var sourcePath = Path.Combine(userFolder, @"Downloads\Vierhalla");
 
-        var fwlFileName = "Vierhalla20240521a.fwl - Not internally renamed";
+        var fwlFileName = "world.fwl";
 
         var fullPath = Path.Combine(sourcePath, fwlFileName);
 
         var data = _fwlFileHelper.ReadFile(fullPath);
 
-        var newName = "Vierhalla20240521f";
+        var newName = "TestNewName001";
 
         var newData = _fwlFileHelper.UpdateWorldName(data, newName);
 
@@ -68,10 +60,11 @@ public class FwlRewriteTests
     [Fact]
     public void NewWorldWithShortMethod()
     {
-        var sourcePath = @"C:\Users\ravel\Downloads\Vierhalla";
+        var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var sourcePath = Path.Combine(userFolder, @"Downloads\Vierhalla");
 
-        var fwlFileName = "Vierhalla20240521a.fwl - Not internally renamed";
-        var newName = "Vierhalla20240521g";
+        var fwlFileName = "world.fwl";
+        var newName = "TestNewName002";
 
         _fwlFileHelper.CreateNewFileWithNewWorldName(sourcePath, fwlFileName, newName);
 
@@ -83,18 +76,37 @@ public class FwlRewriteTests
     [Fact]
     public void NewWorlds()
     {
-        var sourcePath = @"C:\Users\ravel\Downloads\Vierhalla";
-
+        var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var sourcePath = Path.Combine(userFolder, @"Downloads\Vierhalla");
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var localWorldsPath = Path.Combine(Directory.GetParent(appData).ToString(), @"LocalLow\IronGate\Valheim\worlds_local");
         var fwlFileName = "world.fwl";
-        var newName = "Vierhalla20240529";
+        var newName = "TestNewName003";
+        var maxVariant = 'b';
 
-        for (var x = 'a'; x <= 'f'; x++)
-        {
-            _fwlFileHelper.CreateNewFileWithNewWorldName(sourcePath, fwlFileName, newName + x);
-            var readNewData = _fwlFileHelper.ReadFile(Path.Combine(sourcePath, newName + x + ".fwl"));
+        CopyWorldToNewName(fwlFileName, sourcePath, newName);
+        
+        for (var x = 'a'; x < maxVariant; x++)
+            CopyWorldToNewName(fwlFileName, sourcePath, $"{newName}-{x}", localWorldsPath);
+    }
 
-            Assert.Equal(newName + x, _fwlFileHelper.ReadWorldName(readNewData));
-            File.Copy(Path.Combine(sourcePath, "world.db"), Path.Combine(sourcePath, newName + x + ".db"));
-        }
+    private void CopyWorldToNewName(string fwlFileName, string sourcePath, string newName, string localWorldsPath = null)
+    {
+        var baseFileName = Path.GetFileNameWithoutExtension(fwlFileName);
+
+        _fwlFileHelper.CreateNewFileWithNewWorldName(sourcePath, fwlFileName, newName);
+
+        var newFwlFilePath = Path.Combine(sourcePath, $"{newName}.fwl");
+        var readNewData = _fwlFileHelper.ReadFile(newFwlFilePath);
+
+        Assert.Equal(newName, _fwlFileHelper.ReadWorldName(readNewData));
+
+        var dbCopyFilePath = Path.Combine(sourcePath, $"{newName}.db");
+        File.Copy(Path.Combine(sourcePath, $"{baseFileName}.db"), dbCopyFilePath);
+
+        if (string.IsNullOrWhiteSpace(localWorldsPath)) return;
+        
+        File.Move(newFwlFilePath, Path.Combine(localWorldsPath, $"{newName}.fwl"));
+        File.Move(dbCopyFilePath, Path.Combine(localWorldsPath, $"{newName}.db"));
     }
 }
